@@ -23,6 +23,7 @@ package demo.multitouch.controller;
  * - Yuan Chin's fork of ADW Launcher to support multitouch
  * - David Byrne's fractal viewing app Fractoid
  * - mmin's handyCalc calculator
+ * - My own "MultiTouch Visualizer 2" in the Market
  * - Formerly: The browser in cyanogenmod (and before that, JesusFreke), and other firmwares like dwang5.  This usage has been
  *   replaced with official pinch/zoom in Maps, Browser and Gallery[3D] as of API level 5.
  * 
