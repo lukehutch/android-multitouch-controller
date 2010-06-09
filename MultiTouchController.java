@@ -1,4 +1,4 @@
-package demo.multitouch.controller;
+package org.metalev.multitouch.controller;
 
 /**
  * MultiTouchController.java
@@ -12,6 +12,7 @@ package demo.multitouch.controller;
  *   implementing the interface.
  * 
  * Changelog:
+ *   2010-06-09 v1.3.1  Bugfix for Android-2.1 (only got a single touch point on 2.1, should be fixed now)
  *   2010-06-09 v1.3    Ported to Android-2.2 (handle ACTION_POINTER_* actions); fixed several bugs; refactoring; documentation (LH) 
  *   2010-05-17 v1.2.1  Dual-licensed under Apache and GPL licenses
  *   2010-02-18 v1.2    Support for compilation under Android 1.5/1.6 using introspection (mmin, author of handyCalc)
@@ -34,6 +35,7 @@ package demo.multitouch.controller;
 import java.lang.reflect.Field;
 import java.lang.reflect.Method;
 
+import android.util.Log;
 import android.view.MotionEvent;
 
 /**
@@ -166,6 +168,7 @@ public class MultiTouchController<T> {
 
 			succeeded = true;
 		} catch (Exception e) {
+			Log.e("MultiTouchController", "static initializer failed", e);
 		}
 		multiTouchSupported = succeeded;
 	}
@@ -190,10 +193,11 @@ public class MultiTouchController<T> {
 			int histLen = event.getHistorySize() / pointerCount;
 			for (int histIdx = 0; histIdx <= histLen; histIdx++) {
 				// Read from history entries until histIdx == histLen, then read from current event
+				boolean processingHist = histIdx < histLen;
 				if (!multiTouchSupported || pointerCount == 1) {
-					xVals[0] = histIdx < histLen ? event.getHistoricalX(histIdx) : event.getX();
-					yVals[0] = histIdx < histLen ? event.getHistoricalY(histIdx) : event.getY();
-					pressureVals[0] = histIdx < histLen ? event.getHistoricalPressure(histIdx) : event.getPressure();
+					xVals[0] = processingHist ? event.getHistoricalX(histIdx) : event.getX();
+					yVals[0] = processingHist ? event.getHistoricalY(histIdx) : event.getY();
+					pressureVals[0] = processingHist ? event.getHistoricalPressure(histIdx) : event.getPressure();
 				} else {
 					// Read x, y and pressure of each pointer
 					int numPointers = Math.min(pointerCount, MAX_TOUCH_POINTS);
@@ -203,24 +207,25 @@ public class MultiTouchController<T> {
 						// N.B. if pointerCount == 1, then the following methods throw an array index out of range exception,
 						// and the code above is therefore required not just for Android 1.5/1.6 but also for when there is
 						// only one touch point on the screen -- pointlessly inconsistent :(
-						xVals[i] = (Float) (histIdx < histLen ? m_getHistoricalX.invoke(event, ptrIdx, histIdx) : m_getX.invoke(event, ptrIdx));
-						yVals[i] = (Float) (histIdx < histLen ? m_getHistoricalY.invoke(event, ptrIdx, histIdx) : m_getY.invoke(event, ptrIdx));
-						pressureVals[i] = (Float) (histIdx < histLen ? m_getHistoricalPressure.invoke(event, ptrIdx, histIdx) : m_getPressure.invoke(
+						xVals[i] = (Float) (processingHist ? m_getHistoricalX.invoke(event, ptrIdx, histIdx) : m_getX.invoke(event, ptrIdx));
+						yVals[i] = (Float) (processingHist ? m_getHistoricalY.invoke(event, ptrIdx, histIdx) : m_getY.invoke(event, ptrIdx));
+						pressureVals[i] = (Float) (processingHist ? m_getHistoricalPressure.invoke(event, ptrIdx, histIdx) : m_getPressure.invoke(
 								event, ptrIdx));
 					}
 				}
 				// Decode event
 				decodeTouchEvent(pointerCount, xVals, yVals, pressureVals,
 						pointerIdxs, //
-						/* action = */histIdx < histLen ? MotionEvent.ACTION_MOVE : action, //
-						/* down = */histIdx < histLen ? true : action != MotionEvent.ACTION_UP
+						/* action = */processingHist ? MotionEvent.ACTION_MOVE : action, //
+						/* down = */processingHist ? true : action != MotionEvent.ACTION_UP
 								&& (action & ((1 << ACTION_POINTER_INDEX_SHIFT) - 1)) != ACTION_POINTER_UP && action != MotionEvent.ACTION_CANCEL,
-						event.getHistoricalEventTime(histIdx));
+						processingHist ? event.getHistoricalEventTime(histIdx) : event.getEventTime());
 			}
 
 			return true;
 		} catch (Exception e) {
-			// In case any of the introspection stuff fails
+			// In case any of the introspection stuff fails (it shouldn't)
+			Log.e("MultiTouchController", "onTouchEvent() failed", e);
 			return false;
 		}
 	}
