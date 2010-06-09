@@ -12,6 +12,7 @@ package org.metalev.multitouch.controller;
  *   implementing the interface.
  * 
  * Changelog:
+ *   2010-06-09 v1.3.2  Another bugfix for Android-2.1 (LH)
  *   2010-06-09 v1.3.1  Bugfix for Android-2.1 (only got a single touch point on 2.1, should be fixed now) (LH)
  *   2010-06-09 v1.3    Ported to Android-2.2 (handle ACTION_POINTER_* actions); fixed several bugs; refactoring; documentation (LH) 
  *   2010-05-17 v1.2.1  Dual-licensed under Apache and GPL licenses
@@ -156,21 +157,27 @@ public class MultiTouchController<T> {
 			m_getHistoricalPressure = MotionEvent.class.getMethod("getHistoricalPressure", Integer.TYPE, Integer.TYPE);
 			m_getX = MotionEvent.class.getMethod("getX", Integer.TYPE);
 			m_getY = MotionEvent.class.getMethod("getY", Integer.TYPE);
-
-			// Android 2.2 stuff (optional here, the original Android 2.2 consts are declared above,
-			// and these actions aren't used previous to Android 2.2):
-			Field up = MotionEvent.class.getField("ACTION_POINTER_UP");
-			if (up != null)
-				ACTION_POINTER_UP = up.getInt(null);
-			Field shift = MotionEvent.class.getField("ACTION_POINTER_INDEX_SHIFT");
-			if (shift != null)
-				ACTION_POINTER_INDEX_SHIFT = shift.getInt(null);
-
 			succeeded = true;
 		} catch (Exception e) {
 			Log.e("MultiTouchController", "static initializer failed", e);
 		}
 		multiTouchSupported = succeeded;
+		if (multiTouchSupported) {
+			// Android 2.2+ stuff (the original Android 2.2 consts are declared above,
+			// and these actions aren't used previous to Android 2.2):
+			try {
+				Field up = MotionEvent.class.getField("ACTION_POINTER_UP");
+				if (up != null)
+					ACTION_POINTER_UP = up.getInt(null);
+			} catch (Exception e) {
+			}
+			try {
+				Field shift = MotionEvent.class.getField("ACTION_POINTER_INDEX_SHIFT");
+				if (shift != null)
+					ACTION_POINTER_INDEX_SHIFT = shift.getInt(null);
+			} catch (Exception e) {
+			}
+		}
 	}
 
 	// ------------------------------------------------------------------------------------
