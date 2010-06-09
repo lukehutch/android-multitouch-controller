@@ -12,8 +12,7 @@ package org.metalev.multitouch.controller;
  *   implementing the interface.
  * 
  * Changelog:
- *   2010-06-09 v1.3.2  Another bugfix for Android-2.1 (LH)
- *   2010-06-09 v1.3.1  Bugfix for Android-2.1 (only got a single touch point on 2.1, should be fixed now) (LH)
+ *   2010-06-09 v1.3.3  Bugfixes for Android-2.1; added optional debug info (LH)
  *   2010-06-09 v1.3    Ported to Android-2.2 (handle ACTION_POINTER_* actions); fixed several bugs; refactoring; documentation (LH) 
  *   2010-05-17 v1.2.1  Dual-licensed under Apache and GPL licenses
  *   2010-02-18 v1.2    Support for compilation under Android 1.5/1.6 using introspection (mmin, author of handyCalc)
