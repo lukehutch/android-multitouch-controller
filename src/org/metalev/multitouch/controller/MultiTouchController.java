@@ -33,7 +33,6 @@ package org.metalev.multitouch.controller;
  *   Dual-licensed under the Apache License v2 and the GPL v2.
  */
 
-import java.lang.reflect.Field;
 import java.lang.reflect.Method;
 
 import android.util.Log;
@@ -65,6 +64,9 @@ public class MultiTouchController<T> {
 
 	// The max number of touch points that can be present on the screen at once
 	public static final int MAX_TOUCH_POINTS = 10;
+
+	// Generate tons of log entries for debugging
+	private static final boolean DEBUG = false;
 
 	// --
 
@@ -166,15 +168,8 @@ public class MultiTouchController<T> {
 			// Android 2.2+ stuff (the original Android 2.2 consts are declared above,
 			// and these actions aren't used previous to Android 2.2):
 			try {
-				Field up = MotionEvent.class.getField("ACTION_POINTER_UP");
-				if (up != null)
-					ACTION_POINTER_UP = up.getInt(null);
-			} catch (Exception e) {
-			}
-			try {
-				Field shift = MotionEvent.class.getField("ACTION_POINTER_INDEX_SHIFT");
-				if (shift != null)
-					ACTION_POINTER_INDEX_SHIFT = shift.getInt(null);
+				ACTION_POINTER_UP = MotionEvent.class.getField("ACTION_POINTER_UP").getInt(null);
+				ACTION_POINTER_INDEX_SHIFT = MotionEvent.class.getField("ACTION_POINTER_INDEX_SHIFT").getInt(null);
 			} catch (Exception e) {
 			}
 		}
@@ -191,9 +186,13 @@ public class MultiTouchController<T> {
 	public boolean onTouchEvent(MotionEvent event) {
 		try {
 			int pointerCount = multiTouchSupported ? (Integer) m_getPointerCount.invoke(event) : 1;
+			if (DEBUG)
+				Log.i("MultiTouch", "Got here 1 - " + multiTouchSupported + " " + dragMode + " " + handleSingleTouchEvents + " " + pointerCount);
 			if (dragMode == MODE_NOTHING && !handleSingleTouchEvents && pointerCount == 1)
 				// Not handling initial single touch events, just pass them on
 				return false;
+			if (DEBUG)
+				Log.i("MultiTouch", "Got here 2");
 
 			// Handle history first (we sometimes get history with ACTION_MOVE events)
 			int action = event.getAction();
@@ -202,11 +201,18 @@ public class MultiTouchController<T> {
 				// Read from history entries until histIdx == histLen, then read from current event
 				boolean processingHist = histIdx < histLen;
 				if (!multiTouchSupported || pointerCount == 1) {
+					// Use single-pointer methods -- these are needed as a special case (for some weird reason) even if
+					// multitouch is supported but there's only one touch point down currently -- event.getX(0) etc. throw
+					// an exception if there's only one point down.
+					if (DEBUG)
+						Log.i("MultiTouch", "Got here 3");
 					xVals[0] = processingHist ? event.getHistoricalX(histIdx) : event.getX();
 					yVals[0] = processingHist ? event.getHistoricalY(histIdx) : event.getY();
 					pressureVals[0] = processingHist ? event.getHistoricalPressure(histIdx) : event.getPressure();
 				} else {
 					// Read x, y and pressure of each pointer
+					if (DEBUG)
+						Log.i("MultiTouch", "Got here 4");
 					int numPointers = Math.min(pointerCount, MAX_TOUCH_POINTS);
 					for (int i = 0; i < numPointers; i++) {
 						int ptrIdx = (Integer) m_findPointerIndex.invoke(event, i);
@@ -239,6 +245,9 @@ public class MultiTouchController<T> {
 
 	private void decodeTouchEvent(int pointerCount, float[] x, float[] y, float[] pressure, int[] pointerIdxs, int action, boolean down,
 			long eventTime) {
+		if (DEBUG)
+			Log.i("MultiTouch", "Got here 5 - " + pointerCount + " " + action + " " + down);
+
 		// Swap curr/prev points
 		PointInfo tmp = prevPt;
 		prevPt = currPt;
@@ -301,6 +310,8 @@ public class MultiTouchController<T> {
 
 	/** The main single-touch and multi-touch logic */
 	private void multiTouchController() {
+		if (DEBUG)
+			Log.i("MultiTouch", "Got here 6 - " + dragMode + " " + currPt.getNumTouchPoints() + " " + currPt.isDown() + currPt.isMultiTouch());
 
 		switch (dragMode) {
 		case MODE_NOTHING:
@@ -389,6 +400,8 @@ public class MultiTouchController<T> {
 			}
 			break;
 		}
+		if (DEBUG)
+			Log.i("MultiTouch", "Got here 7 - " + dragMode + " " + currPt.getNumTouchPoints() + " " + currPt.isDown() + currPt.isMultiTouch());
 	}
 
 	// ------------------------------------------------------------------------------------
@@ -412,8 +425,9 @@ public class MultiTouchController<T> {
 		// -------------------------------------------------------------------------------------------------------------------------------------------
 
 		private void set(int numPoints, float[] x, float[] y, float[] pressure, int[] pointerIdxs, int action, boolean down, long eventTime) {
-			// Log.i("Multitouch", "x: " + x + " y: " + y + " pointerCount: " + pointerCount +
-			// " x2: " + x2 + " y2: " + y2 + " action: " + action + " down: " + down);
+			// if (DEBUG)
+			// Log.i("MultiTouch", "Got here 8 - x: " + x + " y: " + y + " pointerCount: " + pointerCount + " x2: " + x2 + " y2: " + y2 + " action: "
+			// + action + " down: " + down);
 			this.eventTime = eventTime;
 			this.action = action;
 			this.numPoints = numPoints;
