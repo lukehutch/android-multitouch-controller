@@ -12,7 +12,7 @@ package org.metalev.multitouch.controller;
  *   implementing the interface.
  * 
  * Changelog:
- *   2010-06-09 v1.3.1  Bugfix for Android-2.1 (only got a single touch point on 2.1, should be fixed now)
+ *   2010-06-09 v1.3.1  Bugfix for Android-2.1 (only got a single touch point on 2.1, should be fixed now) (LH)
  *   2010-06-09 v1.3    Ported to Android-2.2 (handle ACTION_POINTER_* actions); fixed several bugs; refactoring; documentation (LH) 
  *   2010-05-17 v1.2.1  Dual-licensed under Apache and GPL licenses
  *   2010-02-18 v1.2    Support for compilation under Android 1.5/1.6 using introspection (mmin, author of handyCalc)
@@ -214,11 +214,11 @@ public class MultiTouchController<T> {
 					}
 				}
 				// Decode event
-				decodeTouchEvent(pointerCount, xVals, yVals, pressureVals,
-						pointerIdxs, //
+				decodeTouchEvent(pointerCount, xVals, yVals, pressureVals, pointerIdxs, //
 						/* action = */processingHist ? MotionEvent.ACTION_MOVE : action, //
-						/* down = */processingHist ? true : action != MotionEvent.ACTION_UP
-								&& (action & ((1 << ACTION_POINTER_INDEX_SHIFT) - 1)) != ACTION_POINTER_UP && action != MotionEvent.ACTION_CANCEL,
+						/* down = */processingHist ? true : action != MotionEvent.ACTION_UP //
+								&& (action & ((1 << ACTION_POINTER_INDEX_SHIFT) - 1)) != ACTION_POINTER_UP //
+								&& action != MotionEvent.ACTION_CANCEL, //
 						processingHist ? event.getHistoricalEventTime(histIdx) : event.getEventTime());
 			}
 
