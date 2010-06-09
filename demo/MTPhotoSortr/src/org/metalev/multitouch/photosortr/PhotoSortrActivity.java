@@ -5,21 +5,21 @@
  * 
  * Released under the Apache License v2.
  */
-package org.metalev.multitouch.photosorter;
+package org.metalev.multitouch.photosortr;
 
 import android.app.Activity;
 import android.os.Bundle;
 import android.view.KeyEvent;
 
-public class PhotoSorterActivity extends Activity {
+public class PhotoSortrActivity extends Activity {
 	
-	PhotoSorterView photoSorter;
+	PhotoSortrView photoSorter;
 	
 	@Override
 	public void onCreate(Bundle savedInstanceState) {
 		super.onCreate(savedInstanceState);
 		this.setTitle(R.string.instructions);
-		photoSorter = new PhotoSorterView(this);
+		photoSorter = new PhotoSortrView(this);
 		setContentView(photoSorter);
 	}
 	
