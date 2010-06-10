@@ -3,6 +3,8 @@
  * 
  * (c) Luke Hutchison (luke.hutch@mit.edu)
  * 
+ * TODO: Add OpenGL acceleration.
+ * 
  * Released under the Apache License v2.
  */
 package org.metalev.multitouch.photosortr;
@@ -39,9 +41,15 @@ public class PhotoSortrView extends View implements MultiTouchObjectCanvas<Photo
 
 	// --
 
-	private PointInfo debugTouchPoint;
+	private PointInfo currTouchPoint;
 
 	private boolean mShowDebugInfo = true;
+
+	private static final int UI_MODE_ROTATE = 1, UI_MODE_ANISOTROPIC_SCALE = 2;
+
+	private int mUIMode = UI_MODE_ROTATE;
+
+	// --
 
 	private Paint mLinePaintTouchPointCircle = new Paint();
 
@@ -64,7 +72,7 @@ public class PhotoSortrView extends View implements MultiTouchObjectCanvas<Photo
 		Resources res = context.getResources();
 
 		multiTouchController = new MultiTouchController<Img>(this);
-		debugTouchPoint = new PointInfo();
+		currTouchPoint = new PointInfo();
 
 		for (int i = 0; i < IMAGES.length; i++)
 			mImages.add(new Img(IMAGES[i], res));
@@ -105,17 +113,17 @@ public class PhotoSortrView extends View implements MultiTouchObjectCanvas<Photo
 
 	// ---------------------------------------------------------------------------------------------------
 
-	public void toggleShowDebugInfo() {
-		mShowDebugInfo = !mShowDebugInfo;
+	public void trackballClicked() {
+		mUIMode = (mUIMode + 1) % 3;
 		invalidate();
 	}
 
 	private void drawMultitouchDebugMarks(Canvas canvas) {
-		if (debugTouchPoint.isDown()) {
-			float[] xs = debugTouchPoint.getXs();
-			float[] ys = debugTouchPoint.getYs();
-			float[] pressures = debugTouchPoint.getPressures();
-			int numPoints = Math.min(debugTouchPoint.getNumTouchPoints(), 2);
+		if (currTouchPoint.isDown()) {
+			float[] xs = currTouchPoint.getXs();
+			float[] ys = currTouchPoint.getYs();
+			float[] pressures = currTouchPoint.getPressures();
+			int numPoints = Math.min(currTouchPoint.getNumTouchPoints(), 2);
 			for (int i = 0; i < numPoints; i++)
 				canvas.drawCircle(xs[i], ys[i], 50 + pressures[i] * 80, mLinePaintTouchPointCircle);
 			if (numPoints == 2)
@@ -148,7 +156,7 @@ public class PhotoSortrView extends View implements MultiTouchObjectCanvas<Photo
 	 * and a drag operation is starting. Called with null when drag op ends.
 	 */
 	public void selectObject(Img img, PointInfo touchPoint) {
-		debugTouchPoint.set(touchPoint);
+		currTouchPoint.set(touchPoint);
 		if (img != null) {
 			// Move image to the top of the stack when selected
 			mImages.remove(img);
@@ -161,12 +169,15 @@ public class PhotoSortrView extends View implements MultiTouchObjectCanvas<Photo
 
 	/** Get the current position and scale of the selected image. Called whenever a drag starts or is reset. */
 	public void getPositionAndScale(Img img, PositionAndScale objPosAndScaleOut) {
-		objPosAndScaleOut.set(img.getCenterX(), img.getCenterY(), img.getScaleX(), img.getScaleY(), img.getAngle());
+		// FIXME affine-izem (and fix the fact that the anisotropic_scale part requires averaging the two scale factors)
+		objPosAndScaleOut.set(img.getCenterX(), img.getCenterY(), (mUIMode & UI_MODE_ANISOTROPIC_SCALE) == 0,
+				(img.getScaleX() + img.getScaleY()) / 2, (mUIMode & UI_MODE_ANISOTROPIC_SCALE) != 0, img.getScaleX(), img.getScaleY(),
+				(mUIMode & UI_MODE_ROTATE) != 0, img.getAngle());
 	}
 
 	/** Set the position and scale of the dragged/stretched image. */
 	public boolean setPositionAndScale(Img img, PositionAndScale newImgPosAndScale, PointInfo touchPoint) {
-		debugTouchPoint.set(touchPoint);
+		currTouchPoint.set(touchPoint);
 		boolean ok = img.setPos(newImgPosAndScale);
 		if (ok)
 			invalidate();
@@ -248,9 +259,11 @@ public class PhotoSortrView extends View implements MultiTouchObjectCanvas<Photo
 
 		/** Set the position and scale of an image in screen coordinates */
 		public boolean setPos(PositionAndScale newImgPosAndScale) {
-			return setPos(newImgPosAndScale.getXOff(), newImgPosAndScale.getYOff(), newImgPosAndScale.getScale(), newImgPosAndScale.getScale(),
-					newImgPosAndScale.getAngle());
+			return setPos(newImgPosAndScale.getXOff(), newImgPosAndScale.getYOff(), (mUIMode & UI_MODE_ANISOTROPIC_SCALE) != 0 ? newImgPosAndScale
+					.getScaleX() : newImgPosAndScale.getScale(), (mUIMode & UI_MODE_ANISOTROPIC_SCALE) != 0 ? newImgPosAndScale.getScaleY()
+					: newImgPosAndScale.getScale(), newImgPosAndScale.getAngle());
 			// FIXME: anisotropic scaling jumps when axis-snapping
+			// FIXME: affine-ize
 			// return setPos(newImgPosAndScale.getXOff(), newImgPosAndScale.getYOff(), newImgPosAndScale.getScaleAnisotropicX(),
 			// newImgPosAndScale.getScaleAnisotropicY(), 0.0f);
 		}
@@ -276,6 +289,7 @@ public class PhotoSortrView extends View implements MultiTouchObjectCanvas<Photo
 
 		/** Return whether or not the given screen coords are inside this image */
 		public boolean containsPoint(float scrnX, float scrnY) {
+			// FIXME: need to correctly account for image rotation
 			return (scrnX >= minX && scrnX <= maxX && scrnY >= minY && scrnY <= maxY);
 		}
 

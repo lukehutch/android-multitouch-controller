@@ -38,7 +38,7 @@ public class PhotoSortrActivity extends Activity {
 	@Override
 	public boolean onKeyDown(int keyCode, KeyEvent event) {
 		if (keyCode == KeyEvent.KEYCODE_DPAD_CENTER) {
-			photoSorter.toggleShowDebugInfo();
+			photoSorter.trackballClicked();
 			return true;
 		}
 		return super.onKeyDown(keyCode, event);

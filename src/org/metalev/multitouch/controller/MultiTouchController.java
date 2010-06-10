@@ -12,6 +12,8 @@ package org.metalev.multitouch.controller;
  *   implementing the interface.
  * 
  * Changelog:
+ *   2010-06-09 v1.5    Some API changes to make it possible to selectively update or not update scale / rotation.
+ *                      Fixed anisotropic zoom.  Cleaned up rotation code. (LH)
  *   2010-06-09 v1.4    Added ability to track pinch rotation (Mickael Despesse, author of "Face Frenzy") and anisotropic pinch-zoom (LH)
  *   2010-06-09 v1.3.3  Bugfixes for Android-2.1; added optional debug info (LH)
  *   2010-06-09 v1.3    Ported to Android-2.2 (handle ACTION_POINTER_* actions); fixed several bugs; refactoring; documentation (LH) 
@@ -20,6 +22,9 @@ package org.metalev.multitouch.controller;
  *   2010-01-08 v1.1.1  Bugfixes to Cyanogen's patch that only showed up in more complex uses of controller (LH) 
  *   2010-01-06 v1.1    Modified for official level 5 MT API (Cyanogen)
  *   2009-01-25 v1.0    Original MT controller, released for hacked G1 kernel (LH) 
+ * 
+ * Planned features:
+ * - Add inertia (flick-pinch-zoom or flick-scroll)
  * 
  * Known usages:
  * - Mickael Despesse's "Face Frenzy" face distortion app, to be published to the Market soon
@@ -67,7 +72,7 @@ public class MultiTouchController<T> {
 	public static final int MAX_TOUCH_POINTS = 10;
 
 	// Generate tons of log entries for debugging
-	private static final boolean DEBUG = false;
+	private static final boolean DEBUG = true;
 
 	// --
 
@@ -80,18 +85,18 @@ public class MultiTouchController<T> {
 	// The object being dragged/stretched
 	private T draggedObject = null;
 
-	// Current position and scale of the dragged object 
+	// Current position and scale of the dragged object
 	private PositionAndScale objPosAndScale = new PositionAndScale();
 
-	// Drag/pinch start time and time to ignore spurious events until (to smooth over event noise) 
+	// Drag/pinch start time and time to ignore spurious events until (to smooth over event noise)
 	private long dragStartTime, dragSettleTime;
 
 	// Conversion from object coords to screen coords
 	private float objDraggedPointX, objDraggedPointY;
-	
+
 	// Conversion between scale and width, and object angle and start pinch angle
 	private float startObjScaleOverPinchDiam, startObjAngleMinusPinchAngle;
-	
+
 	// Conversion between X scale and width, and Y scale and height
 	private float startObjScaleXOverPinchWidth, startObjScaleYOverPinchHeight;
 
@@ -279,18 +284,21 @@ public class MultiTouchController<T> {
 
 		// Figure out the object coords of the drag start point's screen coords.
 		// All stretching should be around this point in object-coord-space.
-		float scaleInv = (objPosAndScale.scale == 0.0f ? 1.0f : 1.0f / objPosAndScale.scale);
+		float scaleInv = 1.0f / (!objPosAndScale.updateScale ? 1.0f : objPosAndScale.scale == 0.0f ? 1.0f : objPosAndScale.scale);
 		objDraggedPointX = (currPt.getX() - objPosAndScale.xOff) * scaleInv;
 		objDraggedPointY = (currPt.getY() - objPosAndScale.yOff) * scaleInv;
 
-		// Figure out ratio between object scale factor and multitouch diameter (they are linearly correlated)
-		float diam = currPt.getMultiTouchDiameter();
-		float w = currPt.getMultiTouchWidth();
-		float h = currPt.getMultiTouchHeight();
-		startObjScaleOverPinchDiam = objPosAndScale.scale / (diam == 0.0f ? MIN_MULTITOUCH_SEPARATION : diam);
-		startObjScaleXOverPinchWidth = objPosAndScale.scaleX / (w == 0.0f ? MIN_MULTITOUCH_SEPARATION : w);
-		startObjScaleYOverPinchHeight = objPosAndScale.scaleY / (h == 0.0f ? MIN_MULTITOUCH_SEPARATION : h);
-		startObjAngleMinusPinchAngle = objPosAndScale.angle - currPt.getMultiTouchAngle();
+		// Figure out ratio between object scale factor and multitouch diameter at beginning of drag;
+		// same for angle and optional anisotropic scale. Only read multitouch fields that are needed,
+		// to avoid unnecessary computation (diameter and angle are expensive operations).
+		float diam = Math.max(MIN_MULTITOUCH_SEPARATION * .71f, !objPosAndScale.updateScale ? 0.0f : currPt.getMultiTouchDiameter());
+		float w = Math.max(MIN_MULTITOUCH_SEPARATION, !objPosAndScale.updateScaleXY ? 0.0f : currPt.getMultiTouchWidth());
+		float h = Math.max(MIN_MULTITOUCH_SEPARATION, !objPosAndScale.updateScaleXY ? 0.0f : currPt.getMultiTouchHeight());
+		float ang = !objPosAndScale.updateAngle ? 0.0f : currPt.getMultiTouchAngle();
+		startObjScaleOverPinchDiam = objPosAndScale.scale / diam;
+		startObjScaleXOverPinchWidth = objPosAndScale.scaleX / w;
+		startObjScaleYOverPinchHeight = objPosAndScale.scaleY / h;
+		startObjAngleMinusPinchAngle = objPosAndScale.angle - ang;
 	}
 
 	/** Drag/stretch the dragged object to the current touch position and diameter */
@@ -300,22 +308,24 @@ public class MultiTouchController<T> {
 			return;
 
 		// Calc new position of dragged object
-		float scale = (objPosAndScale.scale == 0.0f ? 1.0f : objPosAndScale.scale);
+		float scale = !objPosAndScale.updateScale ? 1.0f : objPosAndScale.scale == 0.0f ? 1.0f : objPosAndScale.scale;
 		float newObjPosX = currPt.getX() - objDraggedPointX * scale;
 		float newObjPosY = currPt.getY() - objDraggedPointY * scale;
 
-		// Get new drag diameter, and calculate new drag scale and pinch angle
-		float currPinchAngle = currPt.getMultiTouchAngle();
-		float currPinchDiam = Math.max(MIN_MULTITOUCH_SEPARATION, currPt.getMultiTouchDiameter());
-		float currPinchWidth = Math.max(MIN_MULTITOUCH_SEPARATION, currPt.getMultiTouchWidth());
-		float currPinchHeight = Math.max(MIN_MULTITOUCH_SEPARATION, currPt.getMultiTouchHeight());
-		float newScale = startObjScaleOverPinchDiam * currPinchDiam;
-		float newScaleX = startObjScaleXOverPinchWidth * currPinchWidth;
-		float newScaleY = startObjScaleYOverPinchHeight * currPinchHeight;
-		float newAngle = startObjAngleMinusPinchAngle + currPinchAngle;
+		// Get new drag/pinch params. Only read multitouch fields that are needed,
+		// to avoid unnecessary computation (diameter and angle are expensive operations).
+		float diam = Math.max(MIN_MULTITOUCH_SEPARATION * .71f, !objPosAndScale.updateScale ? 0.0f : currPt.getMultiTouchDiameter());
+		float w = Math.max(MIN_MULTITOUCH_SEPARATION, !objPosAndScale.updateScaleXY ? 0.0f : currPt.getMultiTouchWidth());
+		float h = Math.max(MIN_MULTITOUCH_SEPARATION, !objPosAndScale.updateScaleXY ? 0.0f : currPt.getMultiTouchHeight());
+		float ang = !objPosAndScale.updateAngle ? 0.0f : currPt.getMultiTouchAngle();
+		float newScale = startObjScaleOverPinchDiam * diam;
+		float newScaleX = startObjScaleXOverPinchWidth * w;
+		float newScaleY = startObjScaleYOverPinchHeight * h;
+		float newAngle = startObjAngleMinusPinchAngle + ang;
 
-		// Get the new obj coords and scale, and set them (notifying the subclass of the change)
+		// Set the new obj coords, scale, and angle as appropriate (notifying the subclass of the change).
 		objPosAndScale.set(newObjPosX, newObjPosY, newScale, newScaleX, newScaleY, newAngle);
+
 		boolean success = objectCanvas.setPositionAndScale(draggedObject, objPosAndScale, currPt);
 		if (!success)
 			; // If we could't set those params, do nothing currently
@@ -638,38 +648,36 @@ public class MultiTouchController<T> {
 	 */
 	public static class PositionAndScale {
 		private float xOff, yOff, scale, scaleX, scaleY, angle;
+		private boolean updateScale, updateScaleXY, updateAngle;
 
-		/** Set position, both isotropic and anisotropic scale, and angle. */
-		public void set(float xOff, float yOff, float scale, float scaleX, float scaleY, float angle) {
+		/**
+		 * Set position and optionally scale, anisotropic scale, and/or angle. Where if the corresponding "update" flag is set to false, the field's
+		 * value will not be changed during a pinch operation. If the value is not being updated *and* the value is not used by the client
+		 * application, then the value can just be zero. However if the value is not being updated but the value *is* being used by the client
+		 * application, the value should still be specified and the update flag should be false (e.g. angle of the object being dragged should still
+		 * be specified even if the program is in "resize" mode rather than "rotate" mode).
+		 */
+		public void set(float xOff, float yOff, boolean updateScale, float scale, boolean updateScaleXY, float scaleX, float scaleY,
+				boolean updateAngle, float angle) {
 			this.xOff = xOff;
 			this.yOff = yOff;
-			this.scale =  scale == 0.0f ? 1.0f : scale;
+			this.updateScale = updateScale;
+			this.scale = scale == 0.0f ? 1.0f : scale;
+			this.updateScaleXY = updateScaleXY;
 			this.scaleX = scaleX == 0.0f ? 1.0f : scaleX;
 			this.scaleY = scaleY == 0.0f ? 1.0f : scaleY;
+			this.updateAngle = updateAngle;
 			this.angle = angle;
 		}
 
-		/** Set position, anisotropic scale and angle. */
-		public void set(float xOff, float yOff, float scaleX, float scaleY, float angle) {
-			// A bit hackish, but isotropic scale shouldn't be used if we're setting anisotropic scale anyway.
-			// Geometric mean (or even formula for two resistors in parallel) would actually be better but is slower.
-			float scale = (scaleX + scaleY) * .5f;
-			set(xOff, yOff, scale, scaleX, scaleY, angle);
-		}
-
-		/** Set position, scale and angle. */
-		public void set(float xOff, float yOff, float scale, float angle) {
-			set(xOff, yOff, scale, scale, scale, angle);
-		}
-
-		/** Set position and scale; set to default angle of 0. */
-		public void set(float xOff, float yOff, float scale) {
-			set(xOff, yOff, scale, scale, scale, 0.0f);
-		}
-
-		/** Set position; set to default scale of 1 and default angle of 0. */
-		public void set(float xOff, float yOff) {
-			set(xOff, yOff, 1.0f, 1.0f, 1.0f, 0.0f);
+		/** Set position and optionally scale, anisotropic scale, and/or angle, without changing the "update" flags. */
+		protected void set(float xOff, float yOff, float scale, float scaleX, float scaleY, float angle) {
+			this.xOff = xOff;
+			this.yOff = yOff;
+			this.scale = scale == 0.0f ? 1.0f : scale;
+			this.scaleX = scaleX == 0.0f ? 1.0f : scaleX;
+			this.scaleY = scaleY == 0.0f ? 1.0f : scaleY;
+			this.angle = angle;
 		}
 
 		public float getXOff() {
@@ -681,21 +689,21 @@ public class MultiTouchController<T> {
 		}
 
 		public float getScale() {
-			return scale;
+			return !updateScale ? 1.0f : scale;
 		}
 
 		/** Included in case you want to support anisotropic scaling */
-		public float getScaleAnisotropicX() {
-			return scaleX;
+		public float getScaleX() {
+			return !updateScaleXY ? 1.0f : scaleX;
 		}
 
 		/** Included in case you want to support anisotropic scaling */
-		public float getScaleAnisotropicY() {
-			return scaleY;
+		public float getScaleY() {
+			return !updateScaleXY ? 1.0f : scaleY;
 		}
 
 		public float getAngle() {
-			return angle;
+			return !updateAngle ? 0.0f : angle;
 		}
 	}
 
