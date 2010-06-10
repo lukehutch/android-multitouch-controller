@@ -99,7 +99,7 @@ public class MultiTouchController<T> {
 	private PointInfo mPrevPt;
 
 	/** Fields extracted from mCurrPt */
-	float mCurrPtX, mCurrPtY, mCurrPtDiam, mCurrPtWidth, mCurrPtHeight, mCurrPtAng;
+	private float mCurrPtX, mCurrPtY, mCurrPtDiam, mCurrPtWidth, mCurrPtHeight, mCurrPtAng;
 
 	/**
 	 * Extract fields from mCurrPt, respecting the update* fields of mCurrPt. This just avoids code duplication. I hate that Java doesn't support
