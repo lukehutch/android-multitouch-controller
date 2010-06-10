@@ -7,13 +7,23 @@ package org.metalev.multitouch.controller;
  *   Please drop me an email if you use this code so I can list your project here!
  * 
  * Usage:
- *   Create a class that extends View and implements MultiTouchObjectCanvas<T>, where T is the type of object that you want the controller
- *   to be able to drag and scale.  See comments in the definition interface MultiTouchObjectCanvas<T> below for information on correctly
- *   implementing the interface.
+ *   <code>
+ *   public class MyMTView extends View implements MultiTouchObjectCanvas<PinchWidgetType> {
+ *
+ *       private MultiTouchController<PinchWidgetType> multiTouchController = new MultiTouchController<PinchWidgetType>(this);
+ *  
+ *       // Pass touch events to the MT controller
+ *       public boolean onTouchEvent(MotionEvent event) {
+ *           return multiTouchController.onTouchEvent(event);
+ *       }
+ *     
+ *       // ... then implement the MultiTouchObjectCanvas interface here, see details in the comments of that interface.
+ *   }
+ *   </code>
  * 
  * Changelog:
- *   2010-06-09 v1.5    Some API changes to make it possible to selectively update or not update scale / rotation.
- *                      Fixed anisotropic zoom.  Cleaned up rotation code. (LH)
+ *   2010-06-09 v1.5.1  Some API changes to make it possible to selectively update or not update scale / rotation.
+ *                      Fixed anisotropic zoom.  Cleaned up rotation code.  Added more comments.  Better var names. (LH)
  *   2010-06-09 v1.4    Added ability to track pinch rotation (Mickael Despesse, author of "Face Frenzy") and anisotropic pinch-zoom (LH)
  *   2010-06-09 v1.3.3  Bugfixes for Android-2.1; added optional debug info (LH)
  *   2010-06-09 v1.3    Ported to Android-2.2 (handle ACTION_POINTER_* actions); fixed several bugs; refactoring; documentation (LH) 
@@ -57,67 +67,93 @@ public class MultiTouchController<T> {
 	 */
 	private static final long EVENT_SETTLE_TIME_INTERVAL = 20;
 
-	// The biggest possible abs val of the change in x or y between multitouch events
-	// (larger dx/dy events are ignored) -- helps eliminate jumping on finger 2 up/down
+	/**
+	 * The biggest possible abs val of the change in x or y between multitouch events (larger dx/dy events are ignored) -- helps eliminate jumps in
+	 * pointer position on finger 2 up/down.
+	 */
 	private static final float MAX_MULTITOUCH_POS_JUMP_SIZE = 30.0f;
 
-	// The biggest possible abs val of the change in multitouchWidth or multitouchHeight between
-	// multitouch events (larger-jump events are ignored) -- helps eliminate jumping on finger 2 up/down
+	/**
+	 * The biggest possible abs val of the change in multitouchWidth or multitouchHeight between multitouch events (larger-jump events are ignored) --
+	 * helps eliminate jumps in pointer position on finger 2 up/down.
+	 */
 	private static final float MAX_MULTITOUCH_DIM_JUMP_SIZE = 40.0f;
 
-	// The smallest possible distance between multitouch points (used to avoid div-by-zero errors and display glitches)
+	/** The smallest possible distance between multitouch points (used to avoid div-by-zero errors and display glitches) */
 	private static final float MIN_MULTITOUCH_SEPARATION = 30.0f;
 
-	// The max number of touch points that can be present on the screen at once
+	/** The max number of touch points that can be present on the screen at once */
 	public static final int MAX_TOUCH_POINTS = 10;
 
-	// Generate tons of log entries for debugging
+	/** Generate tons of log entries for debugging */
 	private static final boolean DEBUG = true;
 
-	// --
+	// ----------------------------------------------------------------------------------------------------------------------
 
 	MultiTouchObjectCanvas<T> objectCanvas;
 
-	private PointInfo currPt, prevPt;
+	/** The current touch point */
+	private PointInfo mCurrPt;
 
-	// --
+	/** The previous touch point */
+	private PointInfo mPrevPt;
 
-	// The object being dragged/stretched
-	private T draggedObject = null;
+	/** Fields extracted from mCurrPt */
+	float mCurrPtX, mCurrPtY, mCurrPtDiam, mCurrPtWidth, mCurrPtHeight, mCurrPtAng;
 
-	// Current position and scale of the dragged object
-	private PositionAndScale objPosAndScale = new PositionAndScale();
+	/**
+	 * Extract fields from mCurrPt, respecting the update* fields of mCurrPt. This just avoids code duplication. I hate that Java doesn't support
+	 * higher-order functions, tuples or multiple return values from functions.
+	 */
+	private void extractCurrPtInfo() {
+		// Get new drag/pinch params. Only read multitouch fields that are needed,
+		// to avoid unnecessary computation (diameter and angle are expensive operations).
+		mCurrPtX = mCurrPt.getX();
+		mCurrPtY = mCurrPt.getY();
+		mCurrPtDiam = Math.max(MIN_MULTITOUCH_SEPARATION * .71f, !mCurrXform.updateScale ? 0.0f : mCurrPt.getMultiTouchDiameter());
+		mCurrPtWidth = Math.max(MIN_MULTITOUCH_SEPARATION, !mCurrXform.updateScaleXY ? 0.0f : mCurrPt.getMultiTouchWidth());
+		mCurrPtHeight = Math.max(MIN_MULTITOUCH_SEPARATION, !mCurrXform.updateScaleXY ? 0.0f : mCurrPt.getMultiTouchHeight());
+		mCurrPtAng = !mCurrXform.updateAngle ? 0.0f : mCurrPt.getMultiTouchAngle();
+	}
 
-	// Drag/pinch start time and time to ignore spurious events until (to smooth over event noise)
-	private long dragStartTime, dragSettleTime;
-
-	// Conversion from object coords to screen coords
-	private float objDraggedPointX, objDraggedPointY;
-
-	// Conversion between scale and width, and object angle and start pinch angle
-	private float startObjScaleOverPinchDiam, startObjAngleMinusPinchAngle;
-
-	// Conversion between X scale and width, and Y scale and height
-	private float startObjScaleXOverPinchWidth, startObjScaleYOverPinchHeight;
-
-	// --
+	// ----------------------------------------------------------------------------------------------------------------------
 
 	/** Whether to handle single-touch events/drags before multi-touch is initiated or not; if not, they are handled by subclasses */
 	private boolean handleSingleTouchEvents;
 
-	// --
+	/** The object being dragged/stretched */
+	private T selectedObject = null;
 
-	// Note: the mode number is also the number of fingers down on the screen (except 2 => 2+)
+	/** Current position and scale of the dragged object */
+	private PositionAndScale mCurrXform = new PositionAndScale();
 
+	/** Drag/pinch start time and time to ignore spurious events until (to smooth over event noise) */
+	private long mSettleStartTime, mSettleEndTime;
+
+	/** Conversion from object coords to screen coords */
+	private float startPosX, startPosY;
+
+	/** Conversion between scale and width, and object angle and start pinch angle */
+	private float startScaleOverPinchDiam, startAngleMinusPinchAngle;
+
+	/** Conversion between X scale and width, and Y scale and height */
+	private float startScaleXOverPinchWidth, startScaleYOverPinchHeight;
+
+	// ----------------------------------------------------------------------------------------------------------------------
+
+	/** No touch points down. */
 	private static final int MODE_NOTHING = 0;
 
+	/** One touch point down, dragging an object. */
 	private static final int MODE_DRAG = 1;
 
-	private static final int MODE_STRETCH = 2;
+	/** Two or more touch points down, stretching/rotating an object using the first two touch points. */
+	private static final int MODE_PINCH = 2;
 
-	private int dragMode = MODE_NOTHING;
+	/** Current drag mode */
+	private int mMode = MODE_NOTHING;
 
-	// ------------------------------------------------------------------------------------
+	// ----------------------------------------------------------------------------------------------------------------------
 
 	/** Constructor that sets handleSingleTouchEvents to true */
 	public MultiTouchController(MultiTouchObjectCanvas<T> objectCanvas) {
@@ -126,8 +162,8 @@ public class MultiTouchController<T> {
 
 	/** Full constructor */
 	public MultiTouchController(MultiTouchObjectCanvas<T> objectCanvas, boolean handleSingleTouchEvents) {
-		this.currPt = new PointInfo();
-		this.prevPt = new PointInfo();
+		this.mCurrPt = new PointInfo();
+		this.mPrevPt = new PointInfo();
 		this.handleSingleTouchEvents = handleSingleTouchEvents;
 		this.objectCanvas = objectCanvas;
 	}
@@ -202,8 +238,8 @@ public class MultiTouchController<T> {
 		try {
 			int pointerCount = multiTouchSupported ? (Integer) m_getPointerCount.invoke(event) : 1;
 			if (DEBUG)
-				Log.i("MultiTouch", "Got here 1 - " + multiTouchSupported + " " + dragMode + " " + handleSingleTouchEvents + " " + pointerCount);
-			if (dragMode == MODE_NOTHING && !handleSingleTouchEvents && pointerCount == 1)
+				Log.i("MultiTouch", "Got here 1 - " + multiTouchSupported + " " + mMode + " " + handleSingleTouchEvents + " " + pointerCount);
+			if (mMode == MODE_NOTHING && !handleSingleTouchEvents && pointerCount == 1)
 				// Not handling initial single touch events, just pass them on
 				return false;
 			if (DEBUG)
@@ -264,193 +300,196 @@ public class MultiTouchController<T> {
 			Log.i("MultiTouch", "Got here 5 - " + pointerCount + " " + action + " " + down);
 
 		// Swap curr/prev points
-		PointInfo tmp = prevPt;
-		prevPt = currPt;
-		currPt = tmp;
+		PointInfo tmp = mPrevPt;
+		mPrevPt = mCurrPt;
+		mCurrPt = tmp;
 		// Overwrite old prev point
-		currPt.set(pointerCount, x, y, pressure, pointerIdxs, action, down, eventTime);
+		mCurrPt.set(pointerCount, x, y, pressure, pointerIdxs, action, down, eventTime);
 		multiTouchController();
 	}
 
 	// ------------------------------------------------------------------------------------
 
-	/** Start dragging/stretching, or reset drag/stretch to current point if something goes out of range */
-	private void resetDrag() {
-		if (draggedObject == null)
+	/** Start dragging/pinching, or reset drag/pinch to current point if something goes out of range */
+	private void anchorAtThisPositionAndScale() {
+		if (selectedObject == null)
 			return;
 
-		// Get dragged object position and scale
-		objectCanvas.getPositionAndScale(draggedObject, objPosAndScale);
+		// Get selected object's current position and scale
+		objectCanvas.getPositionAndScale(selectedObject, mCurrXform);
 
 		// Figure out the object coords of the drag start point's screen coords.
 		// All stretching should be around this point in object-coord-space.
-		float scaleInv = 1.0f / (!objPosAndScale.updateScale ? 1.0f : objPosAndScale.scale == 0.0f ? 1.0f : objPosAndScale.scale);
-		objDraggedPointX = (currPt.getX() - objPosAndScale.xOff) * scaleInv;
-		objDraggedPointY = (currPt.getY() - objPosAndScale.yOff) * scaleInv;
-
-		// Figure out ratio between object scale factor and multitouch diameter at beginning of drag;
-		// same for angle and optional anisotropic scale. Only read multitouch fields that are needed,
-		// to avoid unnecessary computation (diameter and angle are expensive operations).
-		float diam = Math.max(MIN_MULTITOUCH_SEPARATION * .71f, !objPosAndScale.updateScale ? 0.0f : currPt.getMultiTouchDiameter());
-		float w = Math.max(MIN_MULTITOUCH_SEPARATION, !objPosAndScale.updateScaleXY ? 0.0f : currPt.getMultiTouchWidth());
-		float h = Math.max(MIN_MULTITOUCH_SEPARATION, !objPosAndScale.updateScaleXY ? 0.0f : currPt.getMultiTouchHeight());
-		float ang = !objPosAndScale.updateAngle ? 0.0f : currPt.getMultiTouchAngle();
-		startObjScaleOverPinchDiam = objPosAndScale.scale / diam;
-		startObjScaleXOverPinchWidth = objPosAndScale.scaleX / w;
-		startObjScaleYOverPinchHeight = objPosAndScale.scaleY / h;
-		startObjAngleMinusPinchAngle = objPosAndScale.angle - ang;
+		// Also figure out out ratio between object scale factor and multitouch
+		// diameter at beginning of drag; same for angle and optional anisotropic
+		// scale.
+		float currScaleInv = 1.0f / (!mCurrXform.updateScale ? 1.0f : mCurrXform.scale == 0.0f ? 1.0f : mCurrXform.scale);
+		extractCurrPtInfo();
+		startPosX = (mCurrPtX - mCurrXform.xOff) * currScaleInv;
+		startPosY = (mCurrPtY - mCurrXform.yOff) * currScaleInv;
+		startScaleOverPinchDiam = mCurrXform.scale / mCurrPtDiam;
+		startScaleXOverPinchWidth = mCurrXform.scaleX / mCurrPtWidth;
+		startScaleYOverPinchHeight = mCurrXform.scaleY / mCurrPtHeight;
+		startAngleMinusPinchAngle = mCurrXform.angle - mCurrPtAng;
 	}
 
-	/** Drag/stretch the dragged object to the current touch position and diameter */
-	private void performDrag() {
+	/** Drag/stretch/rotate the selected object using the current touch position(s) relative to the anchor position(s). */
+	private void performDragOrPinch() {
 		// Don't do anything if we're not dragging anything
-		if (draggedObject == null)
+		if (selectedObject == null)
 			return;
 
 		// Calc new position of dragged object
-		float scale = !objPosAndScale.updateScale ? 1.0f : objPosAndScale.scale == 0.0f ? 1.0f : objPosAndScale.scale;
-		float newObjPosX = currPt.getX() - objDraggedPointX * scale;
-		float newObjPosY = currPt.getY() - objDraggedPointY * scale;
-
-		// Get new drag/pinch params. Only read multitouch fields that are needed,
-		// to avoid unnecessary computation (diameter and angle are expensive operations).
-		float diam = Math.max(MIN_MULTITOUCH_SEPARATION * .71f, !objPosAndScale.updateScale ? 0.0f : currPt.getMultiTouchDiameter());
-		float w = Math.max(MIN_MULTITOUCH_SEPARATION, !objPosAndScale.updateScaleXY ? 0.0f : currPt.getMultiTouchWidth());
-		float h = Math.max(MIN_MULTITOUCH_SEPARATION, !objPosAndScale.updateScaleXY ? 0.0f : currPt.getMultiTouchHeight());
-		float ang = !objPosAndScale.updateAngle ? 0.0f : currPt.getMultiTouchAngle();
-		float newScale = startObjScaleOverPinchDiam * diam;
-		float newScaleX = startObjScaleXOverPinchWidth * w;
-		float newScaleY = startObjScaleYOverPinchHeight * h;
-		float newAngle = startObjAngleMinusPinchAngle + ang;
+		float currScale = !mCurrXform.updateScale ? 1.0f : mCurrXform.scale == 0.0f ? 1.0f : mCurrXform.scale;
+		extractCurrPtInfo();
+		float newPosX = mCurrPtX - startPosX * currScale;
+		float newPosY = mCurrPtY - startPosY * currScale;
+		float newScale = startScaleOverPinchDiam * mCurrPtDiam;
+		float newScaleX = startScaleXOverPinchWidth * mCurrPtWidth;
+		float newScaleY = startScaleYOverPinchHeight * mCurrPtHeight;
+		float newAngle = startAngleMinusPinchAngle + mCurrPtAng;
 
 		// Set the new obj coords, scale, and angle as appropriate (notifying the subclass of the change).
-		objPosAndScale.set(newObjPosX, newObjPosY, newScale, newScaleX, newScaleY, newAngle);
+		mCurrXform.set(newPosX, newPosY, newScale, newScaleX, newScaleY, newAngle);
 
-		boolean success = objectCanvas.setPositionAndScale(draggedObject, objPosAndScale, currPt);
+		boolean success = objectCanvas.setPositionAndScale(selectedObject, mCurrXform, mCurrPt);
 		if (!success)
 			; // If we could't set those params, do nothing currently
 	}
 
-	/** The main single-touch and multi-touch logic */
+	/**
+	 * State-based controller for tracking switches between no-touch, single-touch and multi-touch situations. Includes logic for cleaning up the
+	 * event stream, as events around touch up/down are noisy at least on early Synaptics sensors.
+	 */
 	private void multiTouchController() {
 		if (DEBUG)
-			Log.i("MultiTouch", "Got here 6 - " + dragMode + " " + currPt.getNumTouchPoints() + " " + currPt.isDown() + currPt.isMultiTouch());
+			Log.i("MultiTouch", "Got here 6 - " + mMode + " " + mCurrPt.getNumTouchPoints() + " " + mCurrPt.isDown() + mCurrPt.isMultiTouch());
 
-		switch (dragMode) {
+		switch (mMode) {
 		case MODE_NOTHING:
 			// Not doing anything currently
-			if (currPt.isDown()) {
+			if (mCurrPt.isDown()) {
 				// Start a new single-point drag
-				draggedObject = objectCanvas.getDraggableObjectAtPoint(currPt);
-				if (draggedObject != null) {
+				selectedObject = objectCanvas.getDraggableObjectAtPoint(mCurrPt);
+				if (selectedObject != null) {
 					// Started a new single-point drag
-					dragMode = MODE_DRAG;
-					objectCanvas.selectObject(draggedObject, currPt);
-					resetDrag();
+					mMode = MODE_DRAG;
+					objectCanvas.selectObject(selectedObject, mCurrPt);
+					anchorAtThisPositionAndScale();
 					// Don't need any settling time if just placing one finger, there is no noise
-					dragStartTime = dragSettleTime = currPt.getEventTime();
+					mSettleStartTime = mSettleEndTime = mCurrPt.getEventTime();
 				}
 			}
 			break;
 
 		case MODE_DRAG:
 			// Currently in a single-point drag
-			if (!currPt.isDown()) {
+			if (!mCurrPt.isDown()) {
 				// First finger was released, stop dragging
-				dragMode = MODE_NOTHING;
-				objectCanvas.selectObject((draggedObject = null), currPt);
+				mMode = MODE_NOTHING;
+				objectCanvas.selectObject((selectedObject = null), mCurrPt);
 
-			} else if (currPt.isMultiTouch()) {
+			} else if (mCurrPt.isMultiTouch()) {
 				// Point 1 was already down and point 2 was just placed down
-				dragMode = MODE_STRETCH;
+				mMode = MODE_PINCH;
 				// Restart the drag with the new drag position (that is at the midpoint between the touchpoints)
-				resetDrag();
+				anchorAtThisPositionAndScale();
 				// Need to let events settle before moving things, to help with event noise on touchdown
-				dragStartTime = currPt.getEventTime();
-				dragSettleTime = dragStartTime + EVENT_SETTLE_TIME_INTERVAL;
+				mSettleStartTime = mCurrPt.getEventTime();
+				mSettleEndTime = mSettleStartTime + EVENT_SETTLE_TIME_INTERVAL;
 
 			} else {
 				// Point 1 is still down and point 2 did not change state, just do single-point drag to new location
-				if (currPt.getEventTime() < dragSettleTime) {
+				if (mCurrPt.getEventTime() < mSettleEndTime) {
 					// Ignore the first few events if we just stopped stretching, because if finger 2 was kept down while
 					// finger 1 is lifted, then point 1 gets mapped to finger 2. Restart the drag from the new position.
-					resetDrag();
+					anchorAtThisPositionAndScale();
 				} else {
 					// Keep dragging, move to new point
-					performDrag();
+					performDragOrPinch();
 				}
 			}
 			break;
 
-		case MODE_STRETCH:
-			// Two-point stretch
-			if (!currPt.isMultiTouch() || !currPt.isDown()) {
+		case MODE_PINCH:
+			// Two-point pinch-scale/rotate/translate
+			if (!mCurrPt.isMultiTouch() || !mCurrPt.isDown()) {
 				// Dropped one or both points, stop stretching
 
-				if (!currPt.isDown()) {
+				if (!mCurrPt.isDown()) {
 					// Dropped both points, go back to doing nothing
-					dragMode = MODE_NOTHING;
-					objectCanvas.selectObject((draggedObject = null), currPt);
+					mMode = MODE_NOTHING;
+					objectCanvas.selectObject((selectedObject = null), mCurrPt);
 
 				} else {
 					// Just dropped point 2, downgrade to a single-point drag
-					dragMode = MODE_DRAG;
-					// Restart the drag with the single-finger position
-					resetDrag();
+					mMode = MODE_DRAG;
+					// Restart the pinch with the single-finger position
+					anchorAtThisPositionAndScale();
 					// Ignore the first few events after the drop, in case we dropped finger 1 and left finger 2 down
-					dragStartTime = currPt.getEventTime();
-					dragSettleTime = dragStartTime + EVENT_SETTLE_TIME_INTERVAL;
+					mSettleStartTime = mCurrPt.getEventTime();
+					mSettleEndTime = mSettleStartTime + EVENT_SETTLE_TIME_INTERVAL;
 				}
+
 			} else {
-				// Keep stretching
-
-				if (Math.abs(currPt.getX() - prevPt.getX()) > MAX_MULTITOUCH_POS_JUMP_SIZE
-						|| Math.abs(currPt.getY() - prevPt.getY()) > MAX_MULTITOUCH_POS_JUMP_SIZE
-						|| Math.abs(currPt.getMultiTouchWidth() - prevPt.getMultiTouchWidth()) * .5f > MAX_MULTITOUCH_DIM_JUMP_SIZE
-						|| Math.abs(currPt.getMultiTouchHeight() - prevPt.getMultiTouchHeight()) * .5f > MAX_MULTITOUCH_DIM_JUMP_SIZE) {
+				// Still pinching
+				if (Math.abs(mCurrPt.getX() - mPrevPt.getX()) > MAX_MULTITOUCH_POS_JUMP_SIZE
+						|| Math.abs(mCurrPt.getY() - mPrevPt.getY()) > MAX_MULTITOUCH_POS_JUMP_SIZE
+						|| Math.abs(mCurrPt.getMultiTouchWidth() - mPrevPt.getMultiTouchWidth()) * .5f > MAX_MULTITOUCH_DIM_JUMP_SIZE
+						|| Math.abs(mCurrPt.getMultiTouchHeight() - mPrevPt.getMultiTouchHeight()) * .5f > MAX_MULTITOUCH_DIM_JUMP_SIZE) {
 					// Jumped too far, probably event noise, reset and ignore events for a bit
-					resetDrag();
-					dragStartTime = currPt.getEventTime();
-					dragSettleTime = dragStartTime + EVENT_SETTLE_TIME_INTERVAL;
+					anchorAtThisPositionAndScale();
+					mSettleStartTime = mCurrPt.getEventTime();
+					mSettleEndTime = mSettleStartTime + EVENT_SETTLE_TIME_INTERVAL;
 
-				} else if (currPt.eventTime < dragSettleTime) {
+				} else if (mCurrPt.eventTime < mSettleEndTime) {
 					// Events have not yet settled, reset
-					resetDrag();
+					anchorAtThisPositionAndScale();
 				} else {
 					// Stretch to new position and size
-					performDrag();
+					performDragOrPinch();
 				}
 			}
 			break;
 		}
 		if (DEBUG)
-			Log.i("MultiTouch", "Got here 7 - " + dragMode + " " + currPt.getNumTouchPoints() + " " + currPt.isDown() + currPt.isMultiTouch());
+			Log.i("MultiTouch", "Got here 7 - " + mMode + " " + mCurrPt.getNumTouchPoints() + " " + mCurrPt.isDown() + mCurrPt.isMultiTouch());
 	}
 
 	// ------------------------------------------------------------------------------------
 
 	/** A class that packages up all MotionEvent information with all derived multitouch information (if available) */
 	public static class PointInfo {
+		// Multitouch information
+		private int numPoints;
 		private float[] xs = new float[MAX_TOUCH_POINTS];
 		private float[] ys = new float[MAX_TOUCH_POINTS];
 		private float[] pressures = new float[MAX_TOUCH_POINTS];
 		private int[] pointerIdxs = new int[MAX_TOUCH_POINTS];
-		private int numPoints;
 
-		private float xMid, yMid, pressureMid, dx, dy, diameter, diameterSq, angle;
+		// Midpoint of pinch operations
+		private float xMid, yMid, pressureMid;
 
-		private boolean down, isMultiTouch, diameterSqIsCalculated, diameterIsCalculated, angleIsCalculated;
+		// Width/diameter/angle of pinch operations
+		private float dx, dy, diameter, diameterSq, angle;
 
+		// Whether or not there is at least one finger down (isDown) and/or at least two fingers down (isMultiTouch)
+		private boolean isDown, isMultiTouch;
+
+		// Whether or not these fields have already been calculated, for caching purposes
+		private boolean diameterSqIsCalculated, diameterIsCalculated, angleIsCalculated;
+
+		// Event action code and event time
 		private int action;
-
 		private long eventTime;
 
 		// -------------------------------------------------------------------------------------------------------------------------------------------
 
-		private void set(int numPoints, float[] x, float[] y, float[] pressure, int[] pointerIdxs, int action, boolean down, long eventTime) {
-			// if (DEBUG)
-			// Log.i("MultiTouch", "Got here 8 - x: " + x + " y: " + y + " pointerCount: " + pointerCount + " x2: " + x2 + " y2: " + y2 + " action: "
-			// + action + " down: " + down);
+		/** Set all point info */
+		private void set(int numPoints, float[] x, float[] y, float[] pressure, int[] pointerIdxs, int action, boolean isDown, long eventTime) {
+			if (DEBUG)
+				Log.i("MultiTouch", "Got here 8 - " + +numPoints + " " + x[0] + " " + y[0] + " " + (numPoints > 1 ? x[1] : x[0]) + " "
+						+ (numPoints > 1 ? y[1] : y[0]) + " " + action + " " + isDown);
 			this.eventTime = eventTime;
 			this.action = action;
 			this.numPoints = numPoints;
@@ -460,7 +499,7 @@ public class MultiTouchController<T> {
 				this.pressures[i] = pressure[i];
 				this.pointerIdxs[i] = pointerIdxs[i];
 			}
-			this.down = down;
+			this.isDown = isDown;
 			this.isMultiTouch = numPoints >= 2;
 
 			if (isMultiTouch) {
@@ -481,7 +520,10 @@ public class MultiTouchController<T> {
 			diameterSqIsCalculated = diameterIsCalculated = angleIsCalculated = false;
 		}
 
-		/** Copy all fields */
+		/**
+		 * Copy all fields from one PointInfo class to another. PointInfo objects are volatile so you should use this if you want to keep track of the
+		 * last touch event in your own code.
+		 */
 		public void set(PointInfo other) {
 			this.numPoints = other.numPoints;
 			for (int i = 0; i < numPoints; i++) {
@@ -498,7 +540,7 @@ public class MultiTouchController<T> {
 			this.diameter = other.diameter;
 			this.diameterSq = other.diameterSq;
 			this.angle = other.angle;
-			this.down = other.down;
+			this.isDown = other.isDown;
 			this.action = other.action;
 			this.isMultiTouch = other.isMultiTouch;
 			this.diameterIsCalculated = other.diameterIsCalculated;
@@ -509,19 +551,22 @@ public class MultiTouchController<T> {
 
 		// -------------------------------------------------------------------------------------------------------------------------------------------
 
+		/** True if number of touch points >= 2. */
 		public boolean isMultiTouch() {
 			return isMultiTouch;
 		}
 
+		/** Difference between x coords of touchpoint 0 and 1. */
 		public float getMultiTouchWidth() {
 			return isMultiTouch ? dx : 0.0f;
 		}
 
+		/** Difference between y coords of touchpoint 0 and 1. */
 		public float getMultiTouchHeight() {
 			return isMultiTouch ? dy : 0.0f;
 		}
 
-		// Fast integer sqrt, by Jim Ulery. Should be faster than Math.sqrt()
+		/** Fast integer sqrt, by Jim Ulery. Much faster than Math.sqrt() for integers. */
 		private int julery_isqrt(int val) {
 			int temp, g = 0, b = 0x8000, bshft = 15;
 			do {
@@ -629,7 +674,7 @@ public class MultiTouchController<T> {
 		// -------------------------------------------------------------------------------------------------------------------------------------------
 
 		public boolean isDown() {
-			return down;
+			return isDown;
 		}
 
 		public int getAction() {

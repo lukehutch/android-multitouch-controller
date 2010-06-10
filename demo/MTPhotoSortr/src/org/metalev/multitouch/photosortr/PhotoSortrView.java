@@ -37,11 +37,11 @@ public class PhotoSortrView extends View implements MultiTouchObjectCanvas<Photo
 
 	// --
 
-	private MultiTouchController<Img> multiTouchController;
+	private MultiTouchController<Img> multiTouchController = new MultiTouchController<Img>(this);
 
 	// --
 
-	private PointInfo currTouchPoint;
+	private PointInfo currTouchPoint = new PointInfo();
 
 	private boolean mShowDebugInfo = true;
 
@@ -70,10 +70,6 @@ public class PhotoSortrView extends View implements MultiTouchObjectCanvas<Photo
 
 	private void init(Context context) {
 		Resources res = context.getResources();
-
-		multiTouchController = new MultiTouchController<Img>(this);
-		currTouchPoint = new PointInfo();
-
 		for (int i = 0; i < IMAGES.length; i++)
 			mImages.add(new Img(IMAGES[i], res));
 
