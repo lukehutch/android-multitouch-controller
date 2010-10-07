@@ -83,10 +83,10 @@ public class MultiTouchController<T> {
 	private static final float MIN_MULTITOUCH_SEPARATION = 30.0f;
 
 	/** The max number of touch points that can be present on the screen at once */
-	public static final int MAX_TOUCH_POINTS = 10;
+	public static final int MAX_TOUCH_POINTS = 20;
 
 	/** Generate tons of log entries for debugging */
-	private static final boolean DEBUG = true;
+	public static final boolean DEBUG = false;
 
 	// ----------------------------------------------------------------------------------------------------------------------
 
@@ -188,7 +188,7 @@ public class MultiTouchController<T> {
 
 	public static final boolean multiTouchSupported;
 	private static Method m_getPointerCount;
-	private static Method m_findPointerIndex;
+	private static Method m_getPointerId;
 	private static Method m_getPressure;
 	private static Method m_getHistoricalX;
 	private static Method m_getHistoricalY;
@@ -203,7 +203,7 @@ public class MultiTouchController<T> {
 		try {
 			// Android 2.0.1 stuff:
 			m_getPointerCount = MotionEvent.class.getMethod("getPointerCount");
-			m_findPointerIndex = MotionEvent.class.getMethod("findPointerIndex", Integer.TYPE);
+			m_getPointerId = MotionEvent.class.getMethod("getPointerId", Integer.TYPE);
 			m_getPressure = MotionEvent.class.getMethod("getPressure", Integer.TYPE);
 			m_getHistoricalX = MotionEvent.class.getMethod("getHistoricalX", Integer.TYPE, Integer.TYPE);
 			m_getHistoricalY = MotionEvent.class.getMethod("getHistoricalY", Integer.TYPE, Integer.TYPE);
@@ -231,7 +231,7 @@ public class MultiTouchController<T> {
 	private static final float[] xVals = new float[MAX_TOUCH_POINTS];
 	private static final float[] yVals = new float[MAX_TOUCH_POINTS];
 	private static final float[] pressureVals = new float[MAX_TOUCH_POINTS];
-	private static final int[] pointerIdxs = new int[MAX_TOUCH_POINTS];
+	private static final int[] pointerIds = new int[MAX_TOUCH_POINTS];
 
 	/** Process incoming touch events */
 	public boolean onTouchEvent(MotionEvent event) {
@@ -265,20 +265,22 @@ public class MultiTouchController<T> {
 					if (DEBUG)
 						Log.i("MultiTouch", "Got here 4");
 					int numPointers = Math.min(pointerCount, MAX_TOUCH_POINTS);
-					for (int i = 0; i < numPointers; i++) {
-						int ptrIdx = (Integer) m_findPointerIndex.invoke(event, i);
-						pointerIdxs[i] = ptrIdx;
+					if (DEBUG && pointerCount > MAX_TOUCH_POINTS)
+						Log.i("MultiTouch", "Got more pointers than MAX_TOUCH_POINTS");
+					for (int ptrIdx = 0; ptrIdx < numPointers; ptrIdx++) {
+						int ptrId = (Integer) m_getPointerId.invoke(event, ptrIdx);
+						pointerIds[ptrIdx] = ptrId;
 						// N.B. if pointerCount == 1, then the following methods throw an array index out of range exception,
 						// and the code above is therefore required not just for Android 1.5/1.6 but also for when there is
 						// only one touch point on the screen -- pointlessly inconsistent :(
-						xVals[i] = (Float) (processingHist ? m_getHistoricalX.invoke(event, ptrIdx, histIdx) : m_getX.invoke(event, ptrIdx));
-						yVals[i] = (Float) (processingHist ? m_getHistoricalY.invoke(event, ptrIdx, histIdx) : m_getY.invoke(event, ptrIdx));
-						pressureVals[i] = (Float) (processingHist ? m_getHistoricalPressure.invoke(event, ptrIdx, histIdx) : m_getPressure.invoke(
-								event, ptrIdx));
+						xVals[ptrIdx] = (Float) (processingHist ? m_getHistoricalX.invoke(event, ptrIdx, histIdx) : m_getX.invoke(event, ptrIdx));
+						yVals[ptrIdx] = (Float) (processingHist ? m_getHistoricalY.invoke(event, ptrIdx, histIdx) : m_getY.invoke(event, ptrIdx));
+						pressureVals[ptrIdx] = (Float) (processingHist ? m_getHistoricalPressure.invoke(event, ptrIdx, histIdx) : m_getPressure
+								.invoke(event, ptrIdx));
 					}
 				}
 				// Decode event
-				decodeTouchEvent(pointerCount, xVals, yVals, pressureVals, pointerIdxs, //
+				decodeTouchEvent(pointerCount, xVals, yVals, pressureVals, pointerIds, //
 						/* action = */processingHist ? MotionEvent.ACTION_MOVE : action, //
 						/* down = */processingHist ? true : action != MotionEvent.ACTION_UP //
 								&& (action & ((1 << ACTION_POINTER_INDEX_SHIFT) - 1)) != ACTION_POINTER_UP //
@@ -294,8 +296,7 @@ public class MultiTouchController<T> {
 		}
 	}
 
-	private void decodeTouchEvent(int pointerCount, float[] x, float[] y, float[] pressure, int[] pointerIdxs, int action, boolean down,
-			long eventTime) {
+	private void decodeTouchEvent(int pointerCount, float[] x, float[] y, float[] pressure, int[] pointerIds, int action, boolean down, long eventTime) {
 		if (DEBUG)
 			Log.i("MultiTouch", "Got here 5 - " + pointerCount + " " + action + " " + down);
 
@@ -304,7 +305,7 @@ public class MultiTouchController<T> {
 		mPrevPt = mCurrPt;
 		mCurrPt = tmp;
 		// Overwrite old prev point
-		mCurrPt.set(pointerCount, x, y, pressure, pointerIdxs, action, down, eventTime);
+		mCurrPt.set(pointerCount, x, y, pressure, pointerIds, action, down, eventTime);
 		multiTouchController();
 	}
 
@@ -465,7 +466,7 @@ public class MultiTouchController<T> {
 		private float[] xs = new float[MAX_TOUCH_POINTS];
 		private float[] ys = new float[MAX_TOUCH_POINTS];
 		private float[] pressures = new float[MAX_TOUCH_POINTS];
-		private int[] pointerIdxs = new int[MAX_TOUCH_POINTS];
+		private int[] pointerIds = new int[MAX_TOUCH_POINTS];
 
 		// Midpoint of pinch operations
 		private float xMid, yMid, pressureMid;
@@ -486,7 +487,7 @@ public class MultiTouchController<T> {
 		// -------------------------------------------------------------------------------------------------------------------------------------------
 
 		/** Set all point info */
-		private void set(int numPoints, float[] x, float[] y, float[] pressure, int[] pointerIdxs, int action, boolean isDown, long eventTime) {
+		private void set(int numPoints, float[] x, float[] y, float[] pressure, int[] pointerIds, int action, boolean isDown, long eventTime) {
 			if (DEBUG)
 				Log.i("MultiTouch", "Got here 8 - " + +numPoints + " " + x[0] + " " + y[0] + " " + (numPoints > 1 ? x[1] : x[0]) + " "
 						+ (numPoints > 1 ? y[1] : y[0]) + " " + action + " " + isDown);
@@ -497,7 +498,7 @@ public class MultiTouchController<T> {
 				this.xs[i] = x[i];
 				this.ys[i] = y[i];
 				this.pressures[i] = pressure[i];
-				this.pointerIdxs[i] = pointerIdxs[i];
+				this.pointerIds[i] = pointerIds[i];
 			}
 			this.isDown = isDown;
 			this.isMultiTouch = numPoints >= 2;
@@ -530,7 +531,7 @@ public class MultiTouchController<T> {
 				this.xs[i] = other.xs[i];
 				this.ys[i] = other.ys[i];
 				this.pressures[i] = other.pressures[i];
-				this.pointerIdxs[i] = other.pointerIdxs[i];
+				this.pointerIds[i] = other.pointerIds[i];
 			}
 			this.xMid = other.xMid;
 			this.yMid = other.yMid;
@@ -652,13 +653,13 @@ public class MultiTouchController<T> {
 		}
 
 		/**
-		 * Return the array of pointer indices -- only the first getNumTouchPoints() of these is defined. These don't have to be all the numbers from
-		 * 0 to getNumTouchPoints()-1 inclusive, numbers can be skipped if a finger is lifted and the touch sensor is capable of detecting that that
-		 * particular touch point is no longer down. Note that most sensors do not have this capability: when finger 1 is lifted up finger 2 becomes
-		 * the new finger 1.
+		 * Return the array of pointer ids -- only the first getNumTouchPoints() of these is defined. These don't have to be all the numbers from 0 to
+		 * getNumTouchPoints()-1 inclusive, numbers can be skipped if a finger is lifted and the touch sensor is capable of detecting that that
+		 * particular touch point is no longer down. Note that a lot of sensors do not have this capability: when finger 1 is lifted up finger 2
+		 * becomes the new finger 1.  However in theory these IDs can correct for that.  Convert back to indices using MotionEvent.findPointerIndex().
 		 */
-		public int[] getPointerIndices() {
-			return pointerIdxs;
+		public int[] getPointerIds() {
+			return pointerIds;
 		}
 
 		/** Return the pressure the first touch point if there's only one, or the average pressure of first and second touch points if two or more. */
