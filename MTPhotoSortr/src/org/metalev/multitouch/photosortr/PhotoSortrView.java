@@ -31,7 +31,6 @@ import org.metalev.multitouch.controller.MultiTouchController;
 import org.metalev.multitouch.controller.MultiTouchController.MultiTouchObjectCanvas;
 import org.metalev.multitouch.controller.MultiTouchController.PointInfo;
 import org.metalev.multitouch.controller.MultiTouchController.PositionAndScale;
-import org.metalev.multitouch.photosorter.R;
 
 import android.content.Context;
 import android.content.res.Configuration;

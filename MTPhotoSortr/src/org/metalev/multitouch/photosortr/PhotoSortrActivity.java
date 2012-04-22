@@ -23,8 +23,6 @@
  */
 package org.metalev.multitouch.photosortr;
 
-import org.metalev.multitouch.photosorter.R;
-
 import android.app.Activity;
 import android.os.Bundle;
 import android.view.KeyEvent;
