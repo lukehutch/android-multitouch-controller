@@ -154,13 +154,13 @@ public class MultiTouchController<T> {
 	// ----------------------------------------------------------------------------------------------------------------------
 
 	/** No touch points down. */
-	private static final int MODE_NOTHING = 0;
+	public static final int MODE_NOTHING = 0;
 
 	/** One touch point down, dragging an object. */
-	private static final int MODE_DRAG = 1;
+	public static final int MODE_DRAG = 1;
 
 	/** Two or more touch points down, stretching/rotating an object using the first two touch points. */
-	private static final int MODE_PINCH = 2;
+	public static final int MODE_PINCH = 2;
 
 	/** Current drag mode */
 	private int mMode = MODE_NOTHING;
