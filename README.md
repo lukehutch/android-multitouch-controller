@@ -23,6 +23,7 @@ Licensed under the MIT license.
 
 # In use by
 Please send me a note if you use this code, I'm interested to see where it is used. So far I know of (in approximate reverse chronological order of receiving notification):
+- FloraMe: Landscaping made easy, by Paulo Cordeiro
 - Photo Designs : Photo Editor by ANH2 team
 - Instachaka by Rodrigo Arjona
 - Photo Editor : Photo Collage by Vinicorp
@@ -47,4 +48,4 @@ Please send me a note if you use this code, I'm interested to see where it is us
 - Other mentions: Paul Bourke's blog post on using android-multitouch-controller
 
 # Author:
-Luke Hutchison -- luke.dot.hutch.at.gmail.dot.com (@LH on Twitter)
+Luke Hutchison -- luke dot hutch at gmail dot com (@LH on Twitter)
